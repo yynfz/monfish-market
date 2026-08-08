@@ -21,7 +21,9 @@ interface ArtifactSectionProps {
 }
 
 function ArtifactSection({ trade, onVerified }: ArtifactSectionProps) {
+  const { listings } = useEscrow();
   const meta = getListingMeta(trade.listingId);
+  const listing = listings.find((l) => l.id === trade.listingId);
   const [verifyState, setVerifyState] = useState<
     "idle" | "verifying" | "ok" | "mismatch"
   >("idle");
@@ -43,7 +45,8 @@ function ArtifactSection({ trade, onVerified }: ArtifactSectionProps) {
       // The UI has productHash in the listing; we check deliveryHash here which the seller committed.
       if (
         hash.toLowerCase() !== trade.deliveryHash.toLowerCase() ||
-        hash.toLowerCase() !== meta.artifactKeccak.toLowerCase()
+        hash.toLowerCase() !== meta.artifactKeccak.toLowerCase() ||
+        (listing && hash.toLowerCase() !== listing.productHash.toLowerCase())
       ) {
         setVerifyState("mismatch");
         return;
@@ -124,42 +127,66 @@ function ConfirmReceiptButton({
   trade: Trade;
   disabled: boolean;
 }) {
-  const { service, refreshTrades, refreshBalance } = useEscrow();
+  const { service, refreshTrades, refreshBalance, isBusy: globalBusy, setIsBusy } = useEscrow();
   const [step, setStep] = useState<"idle" | "confirming" | "waiting" | "done" | "error">("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [prolonged, setProlonged] = useState(false);
+  const [isRetryable, setIsRetryable] = useState(false);
 
   async function handleConfirm() {
-    if (!service) return;
+    if (!service || globalBusy) return;
     setStep("confirming");
     setErr(null);
+    setIsRetryable(false);
+    setProlonged(false);
+    setIsBusy(true);
     try {
       const tx = await service.confirmReceipt(trade.id);
       setTxHash(tx.txHash);
       setStep("waiting");
+      const timer = setTimeout(() => setProlonged(true), 4000);
       await tx.wait();
+      clearTimeout(timer);
       setStep("done");
       await Promise.all([refreshTrades(), refreshBalance()]);
     } catch (e) {
-      setErr((e as Error).message);
+      const msg = (e as Error).message;
+      setErr(msg);
+      setIsRetryable(msg.toLowerCase().includes("rejected"));
       setStep("error");
+    } finally {
+      setIsBusy(false);
     }
   }
+
+  const isLocalBusy = step !== "idle" && step !== "done" && step !== "error";
 
   return (
     <div style={{ marginTop: "0.75rem" }}>
       <button
         id={`btn-confirm-receipt-${trade.id}`}
         className="btn btn-teal"
-        disabled={disabled || step !== "idle"}
+        disabled={disabled || isLocalBusy || (globalBusy && !isLocalBusy)}
         onClick={handleConfirm}
         title={disabled ? "Download and verify the artifact first" : undefined}
       >
         {step === "confirming" ? <><span className="spinner" /> Awaiting wallet…</> :
          step === "waiting"    ? <><span className="spinner" /> Finalising on Monad…</> :
          step === "done"       ? "✅ Receipt confirmed — seller paid!" :
+         step === "error" && isRetryable ? "✅ Retry Confirm Receipt" :
          "✅ Confirm Receipt"}
       </button>
+
+      {prolonged && step === "waiting" && txHash && (
+        <button
+          className="btn btn-outline btn-sm"
+          style={{ marginLeft: "8px" }}
+          onClick={() => refreshTrades()}
+        >
+          🔍 Check Status
+        </button>
+      )}
 
       {txHash && step !== "done" && (
         <a
@@ -181,7 +208,10 @@ function ConfirmReceiptButton({
       )}
 
       {step === "error" && err && (
-        <div className="alert alert-error" style={{ marginTop: "0.5rem" }}>⚠️ {err}</div>
+        <div className="alert alert-error" style={{ marginTop: "0.5rem" }}>
+          ⚠️ {err}
+          {!isRetryable && <div style={{ fontSize: "0.85em", marginTop: "4px" }}>Blind resubmission disabled.</div>}
+        </div>
       )}
     </div>
   );
@@ -190,17 +220,20 @@ function ConfirmReceiptButton({
 // ─── Refund Button (Issue #10) ────────────────────────────────────────────────
 
 function RefundButton({ trade, onUpdated }: { trade: Trade; onUpdated: () => void }) {
-  const { service } = useEscrow();
+  const { service, isBusy: globalBusy, setIsBusy, refreshTrades } = useEscrow();
   const [refundStep, setRefundStep] = useState<"idle" | "confirming" | "waiting" | "done" | "error">("idle");
   const [refundErr, setRefundErr] = useState<string | null>(null);
   const [prolonged, setProlonged] = useState(false);
+  const [isRetryable, setIsRetryable] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
   async function handleRefund() {
-    if (!service) return;
+    if (!service || globalBusy) return;
     setRefundStep("confirming");
     setRefundErr(null);
+    setIsRetryable(false);
     setProlonged(false);
+    setIsBusy(true);
     
     try {
       const tx = await service.refundExpired(trade.id);
@@ -214,40 +247,51 @@ function RefundButton({ trade, onUpdated }: { trade: Trade; onUpdated: () => voi
       setRefundStep("done");
       setTimeout(() => { setRefundStep("idle"); onUpdated(); }, 2000);
     } catch (e) {
-      setRefundErr((e as Error).message);
+      const msg = (e as Error).message;
+      setRefundErr(msg);
+      const retryable = msg.toLowerCase().includes("rejected");
+      setIsRetryable(retryable);
       setRefundStep("error");
-      setTimeout(() => setRefundStep("idle"), 4000);
+      if (retryable) {
+        setTimeout(() => setRefundStep("idle"), 4000);
+      }
+    } finally {
+      setIsBusy(false);
     }
   }
+
+  const isLocalBusy = refundStep !== "idle" && refundStep !== "done" && refundStep !== "error";
 
   return (
     <>
       <button
         id={`btn-refund-${trade.id}`}
         className="btn btn-danger btn-sm"
-        disabled={refundStep !== "idle"}
+        disabled={isLocalBusy || (globalBusy && !isLocalBusy) || (refundStep === "error" && !isRetryable)}
         onClick={handleRefund}
       >
         {refundStep === "confirming" ? <><span className="spinner" /> Awaiting wallet…</> :
          refundStep === "waiting"    ? <><span className="spinner" /> Finalising…</> :
          refundStep === "done"       ? "↩️ Refunded!" :
+         refundStep === "error" && isRetryable ? "↩️ Retry Reclaim" :
          "↩️ Reclaim Funds"}
       </button>
 
       {prolonged && refundStep === "waiting" && txHash && (
-        <a
-          href={`https://testnet.monadscan.com/tx/${txHash}`}
-          target="_blank"
-          rel="noreferrer"
+        <button
           className="btn btn-outline btn-sm"
           style={{ marginLeft: "8px" }}
+          onClick={() => refreshTrades()}
         >
           🔍 Check Status
-        </a>
+        </button>
       )}
 
       {refundStep === "error" && refundErr && (
-        <div className="alert alert-error" style={{ width: "100%", marginTop: "8px" }}>⚠️ {refundErr}</div>
+        <div className="alert alert-error" style={{ width: "100%", marginTop: "8px" }}>
+          ⚠️ {refundErr}
+          {!isRetryable && <div style={{ fontSize: "0.85em", marginTop: "4px" }}>Blind resubmission disabled.</div>}
+        </div>
       )}
     </>
   );

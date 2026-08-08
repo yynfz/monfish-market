@@ -30,10 +30,12 @@ function shortHash(hex: string) {
 }
 
 export function BuyModal({ listing, onClose, onPurchased }: Props) {
-  const { service } = useEscrow();
+  const { service, isBusy: globalBusy, setIsBusy, refreshTrades } = useEscrow();
   const [stage, setStage] = useState<Stage>("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [isRetryable, setIsRetryable] = useState(false);
+  const [prolonged, setProlonged] = useState(false);
   const [tradeId, setTradeId] = useState<bigint | null>(null);
 
   const meta = getListingMeta(listing.id);
@@ -55,9 +57,11 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
   };
 
   async function handleApprove() {
-    if (!service) return;
+    if (!service || globalBusy) return;
     setErr(null);
+    setIsRetryable(false);
     setStage("approving");
+    setIsBusy(true);
     try {
       const tx = await service.approveUsdc(listing.priceUsdc);
       setTxHash(tx.txHash);
@@ -65,30 +69,44 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
       setTxHash(null);
       setStage("approved");
     } catch (e) {
-      setErr((e as Error).message);
+      const msg = (e as Error).message;
+      setErr(msg);
+      setIsRetryable(msg.toLowerCase().includes("rejected"));
       setStage("error");
+    } finally {
+      setIsBusy(false);
     }
   }
 
   async function handleFund() {
-    if (!service) return;
+    if (!service || globalBusy) return;
     setErr(null);
+    setIsRetryable(false);
+    setProlonged(false);
     setStage("funding");
+    setIsBusy(true);
     try {
       const { tradeId: tid, tx } = await service.fundTrade(listing.id);
       setTxHash(tx.txHash);
       setTradeId(tid);
       setStage("waiting");
+      const timer = setTimeout(() => setProlonged(true), 4000);
       await tx.wait();
+      clearTimeout(timer);
       setStage("done");
       onPurchased();
     } catch (e) {
-      setErr((e as Error).message);
+      const msg = (e as Error).message;
+      setErr(msg);
+      setIsRetryable(msg.toLowerCase().includes("rejected"));
       setStage("error");
+    } finally {
+      setIsBusy(false);
     }
   }
 
-  const isBusy = ["approving", "funding", "waiting"].includes(stage);
+  const isLocalBusy = ["approving", "funding", "waiting"].includes(stage);
+  const disableButtons = globalBusy || isLocalBusy;
 
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -98,7 +116,7 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
           <h3 id="buy-modal-title">
             {icon} {meta?.name ?? `Listing #${listing.id}`}
           </h3>
-          <button className="modal-close" onClick={onClose} disabled={isBusy} aria-label="Close">✕</button>
+          <button className="modal-close" onClick={onClose} disabled={isLocalBusy} aria-label="Close">✕</button>
         </div>
 
         {/* Body */}
@@ -158,7 +176,23 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
           )}
 
           {stage === "error" && err && (
-            <div className="alert alert-error">⚠️ {err}</div>
+            <div className="alert alert-error">
+              ⚠️ {err}
+              {!isRetryable && <div style={{ marginTop: "8px", fontSize: "0.85em" }}>Please refresh or contact support. Blind resubmission is disabled for this error.</div>}
+            </div>
+          )}
+
+          {prolonged && stage === "waiting" && (
+            <div className="alert alert-info" style={{ marginTop: "1rem" }}>
+              ⏳ Taking longer than expected...
+              <button
+                className="btn btn-outline btn-sm"
+                style={{ marginLeft: "1rem" }}
+                onClick={() => { refreshTrades(); onClose(); }}
+              >
+                Check Status
+              </button>
+            </div>
           )}
 
           {txHash && (
@@ -176,13 +210,13 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
 
         {/* Footer */}
         <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose} disabled={isBusy}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={isLocalBusy}>
             Cancel
           </button>
 
-          {stage === "idle" && (
-            <button id="btn-step1-approve" className="btn btn-primary" onClick={handleApprove}>
-              Step 1 — Approve {formatUsdc(listing.priceUsdc)}
+          {(stage === "idle" || (stage === "error" && isRetryable && !tradeId)) && (
+            <button id="btn-step1-approve" className="btn btn-primary" onClick={handleApprove} disabled={globalBusy && !isLocalBusy}>
+              {stage === "error" ? "Retry Step 1 — Approve" : `Step 1 — Approve ${formatUsdc(listing.priceUsdc)}`}
             </button>
           )}
 
@@ -192,9 +226,9 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
             </button>
           )}
 
-          {stage === "approved" && (
-            <button id="btn-step2-fund" className="btn btn-teal" onClick={handleFund}>
-              Step 2 — Deposit to escrow
+          {(stage === "approved" || (stage === "error" && isRetryable && tradeId !== null)) && (
+            <button id="btn-step2-fund" className="btn btn-teal" onClick={handleFund} disabled={globalBusy && !isLocalBusy}>
+              {stage === "error" ? "Retry Step 2 — Deposit" : "Step 2 — Deposit to escrow"}
             </button>
           )}
 
@@ -210,7 +244,7 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
             </button>
           )}
 
-          {(stage === "done" || stage === "error") && (
+          {(stage === "done" || (stage === "error" && !isRetryable)) && (
             <button className="btn btn-outline" onClick={onClose}>Close</button>
           )}
         </div>

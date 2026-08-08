@@ -241,5 +241,14 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}) {
       // Expire it 1 second ago.
       trades.set(tradeId, { ...trade, deadline: Math.floor(Date.now() / 1000) - 1 });
     },
+
+    // Demo Mode helper to reset to initial state.
+    __demoReset() {
+      trades.clear();
+      usdcBalances.set(DEMO_BUYER, INITIAL_BUYER_USDC);
+      usdcBalances.set(DEMO_SELLER, INITIAL_SELLER_USDC);
+      tradeCounter = 0n;
+      eventListeners.clear();
+    },
   };
 }

@@ -12,7 +12,7 @@ import { useEscrow } from "@/hooks/useEscrow";
  * canonical EscrowService (same path as the real seller script).
  */
 export function DemoModePanel({ trades }: { trades: Trade[] }) {
-  const { service, refreshTrades } = useEscrow();
+  const { service, refreshTrades, refreshBalance } = useEscrow();
   const [busy, setBusy] = useState(false);
   const [lastMsg, setLastMsg] = useState<string | null>(null);
 
@@ -56,6 +56,22 @@ export function DemoModePanel({ trades }: { trades: Trade[] }) {
         <strong style={{ color: "#7A5010", fontSize: "0.88rem", textTransform: "uppercase", letterSpacing: "0.07em" }}>
           Demo Mode — Mock Data
         </strong>
+        <div style={{ flex: 1 }} />
+        <button
+          className="btn btn-outline btn-sm"
+          disabled={busy}
+          onClick={async () => {
+            if (typeof (service as any)?.__demoReset === "function") {
+              setBusy(true);
+              (service as any).__demoReset();
+              await Promise.all([refreshTrades(), refreshBalance()]);
+              setBusy(false);
+              setLastMsg("🔄 Demo state reset to initial values.");
+            }
+          }}
+        >
+          Reset Demo
+        </button>
       </div>
 
       <p style={{ fontSize: "0.82rem", color: "#7A5010", marginBottom: "var(--space-3)" }}>

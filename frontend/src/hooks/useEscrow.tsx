@@ -38,6 +38,8 @@ interface EscrowCtx {
   };
   error: string | null;
   clearError: () => void;
+  isBusy: boolean;
+  setIsBusy: (b: boolean) => void;
 }
 
 const Ctx = createContext<EscrowCtx | null>(null);
@@ -59,6 +61,7 @@ export function EscrowProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<TradeEvent[]>([]);
   const [loading, setLoading] = useState({ connect: false, listings: false, trades: false });
   const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
   const unsubRef = useRef<(() => void) | null>(null);
 
   // Lazy-init service (only in browser; avoids SSR issues with window.ethereum).
@@ -137,7 +140,10 @@ export function EscrowProvider({ children }: { children: React.ReactNode }) {
       // subscribe to on-chain events
       if (unsubRef.current) unsubRef.current();
       unsubRef.current = svc.onTradeEvent((ev) => {
-        setEvents((prev) => [ev, ...prev].slice(0, 20));
+        setEvents((prev) => {
+          if (prev.some((p) => p.txHash === ev.txHash && p.type === ev.type)) return prev;
+          return [ev, ...prev].slice(0, 20);
+        });
         // refresh trades + balance on any event for simplicity
         svc.getMyTrades().then(setMyTrades).catch(() => {});
         svc.getUsdcBalance(addr).then(setUsdcBalance).catch(() => {});
@@ -172,6 +178,8 @@ export function EscrowProvider({ children }: { children: React.ReactNode }) {
         loading,
         error,
         clearError,
+        isBusy,
+        setIsBusy,
       }}
     >
       {children}
