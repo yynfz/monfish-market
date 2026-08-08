@@ -35,18 +35,21 @@ export const LISTING_METADATA = {
     description: 'Chunky reef tiles, coral props, and bright seabed pieces for playful ocean worlds.',
     dialogue: 'Fresh reef tiles, packed and ready for your next world.',
     sellerName: 'Mara the Maker',
+    artifactFile: 'pixel-reef-starter-pack.zip',
   },
   2: {
     name: 'Ghost Ship Map Pack',
     description: 'A compact set of haunted routes, wreck markers, and fogbound harbor maps.',
     dialogue: 'Chart the haunted channels before the fog rolls back in.',
     sellerName: 'Old Finn',
+    artifactFile: 'ghost-ship-map-pack.zip',
   },
   3: {
     name: "Captain's Hat Template",
     description: 'A clean, editable hat template sized for blocky fish avatars and crew portraits.',
     dialogue: 'Cut a sharp captain’s hat for any fish who means business.',
     sellerName: 'Tailor Tilda',
+    artifactFile: 'captains-hat-template.zip',
   },
 } as const;
 

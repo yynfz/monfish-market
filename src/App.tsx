@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { formatUsdc, ZONES } from '../shared/escrow';
+import { formatUsdc, TradeStatus, ZONES, type Address, type EscrowService, type Trade } from '../shared/escrow';
+import { createMockEscrowService } from '../shared/escrow.mock';
+import { keccak256 } from 'viem';
 import { getListingMetadata, LISTINGS, type CanonicalListing } from './listings';
 
 type Point = { x: number; y: number };
@@ -30,7 +32,109 @@ function ShellIcon({ name }: { name: 'compass' | 'stall' | 'close' | 'bag' | 'ch
   return <svg aria-hidden="true" className="icon" viewBox="0 0 24 24">{paths[name]}</svg>;
 }
 
-function ListingDrawer({ listing, onClose }: { listing: CanonicalListing; onClose: () => void }) {
+type CommerceProps = {
+  account: Address | null;
+  busy: boolean;
+  service: EscrowService;
+  trade: Trade | null;
+  refresh: () => Promise<void>;
+  setBusy: (busy: boolean) => void;
+  unlocked: boolean;
+  unlock: () => void;
+};
+
+function CommercePanel({ account, busy, listing, refresh, service, setBusy, trade, unlock, unlocked }: CommerceProps & { listing: CanonicalListing }) {
+  const [approved, setApproved] = useState(false);
+  const [message, setMessage] = useState('');
+  const [verified, setVerified] = useState(false);
+
+  async function run(label: string, action: () => Promise<{ wait(): Promise<'success' | 'reverted'> }>) {
+    if (busy) return false;
+    setBusy(true);
+    setMessage(`${label}: Awaiting Wallet…`);
+    try {
+      const tx = await action();
+      setMessage(`${label}: Pending…`);
+      const result = await tx.wait();
+      if (result !== 'success') throw new Error('Transaction reverted');
+      setMessage(`${label} finalized.`);
+      await refresh();
+      return true;
+    } catch (error) {
+      setMessage(`${label} Failed: ${(error as Error).message}. Check Status before retrying.`);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!account) return <p className="commerce-note">Connect the demo wallet to create a Trade.</p>;
+
+  if (!trade) return (
+    <div className="commerce-actions">
+      {!approved ? (
+        <button className="primary-action" disabled={busy} onClick={async () => {
+          const succeeded = await run('Approval', () => service.approveUsdc(listing.priceUsdc));
+          if (succeeded) setApproved(true);
+        }} type="button">Approve {formatUsdc(listing.priceUsdc)} MockUSDC</button>
+      ) : (
+        <button className="primary-action" disabled={busy} onClick={async () => {
+          if (busy) return;
+          setBusy(true);
+          setMessage('Funding: Pending…');
+          try {
+            const result = await service.fundTrade(listing.id);
+            await result.tx.wait();
+            setMessage('Funding finalized.');
+            await refresh();
+          } catch (error) {
+            setMessage(`Funding Failed: ${(error as Error).message}. Check Status before retrying.`);
+          } finally { setBusy(false); }
+        }} type="button">Fund Trade</button>
+      )}
+      {message ? <p className="action-message" role="status">{message}</p> : null}
+    </div>
+  );
+
+  const status = TradeStatus[trade.status];
+  const expired = Math.floor(Date.now() / 1000) > trade.deadline;
+  const canRefund = trade.status !== TradeStatus.Completed && trade.status !== TradeStatus.Refunded;
+
+  async function verifyArtifact() {
+    const deliveryHash = trade?.deliveryHash;
+    if (!deliveryHash) return;
+    setMessage('Verifying artifact…');
+    try {
+      const response = await fetch(`/${getListingMetadata(listing.id)!.artifactFile}`);
+      const hash = keccak256(new Uint8Array(await response.arrayBuffer()));
+      if (hash.toLowerCase() !== listing.productHash.toLowerCase() || hash.toLowerCase() !== deliveryHash.toLowerCase()) {
+        throw new Error('Integrity check failed — hash mismatch');
+      }
+      setVerified(true);
+      unlock();
+      setMessage('Artifact verified and unlocked.');
+    } catch (error) { setVerified(false); setMessage((error as Error).message); }
+  }
+
+  return (
+    <section className="trade-panel" aria-label={`Trade ${trade.id}`}>
+      <p className={`trade-status status-${status.toLowerCase()}`}><span aria-hidden="true">●</span> {status}</p>
+      <p>Delivery Window: {expired ? 'Expired' : 'Active'}</p>
+      {trade.deliveryHash ? <code className="delivery-hash">{trade.deliveryHash}</code> : null}
+      {trade.status === TradeStatus.Delivered ? <>
+        <button className="secondary-action" disabled={busy} onClick={verifyArtifact} type="button">Verify and unlock artifact</button>
+        <button className="primary-action" disabled={busy || !verified} onClick={() => run('Confirmation', () => service.confirmReceipt(trade.id))} type="button">Confirm Receipt</button>
+      </> : null}
+      {unlocked ? <a className="artifact-download" download href={`/${getListingMetadata(listing.id)!.artifactFile}`}>Download verified artifact</a> : null}
+      {trade.status === TradeStatus.Completed ? <p>✅ Seller paid. Artifact remains unlocked.</p> : null}
+      {canRefund ? <button className="secondary-action" disabled={busy || !expired} onClick={() => run('Refund', () => service.refundExpired(trade.id))} type="button">Reclaim Funds</button> : null}
+      {message ? <p className="action-message" role="status">{message}</p> : null}
+      <button className="check-status" disabled={busy} onClick={() => void refresh()} type="button">Check Status</button>
+    </section>
+  );
+}
+
+function ListingDrawer({ commerce, listing, onClose }: { commerce: CommerceProps; listing: CanonicalListing; onClose: () => void }) {
   const [draftOpen, setDraftOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -115,6 +219,7 @@ function ListingDrawer({ listing, onClose }: { listing: CanonicalListing; onClos
           <ShellIcon name="bag" /> Open checkout draft
         </button>
       )}
+      <CommercePanel {...commerce} listing={listing} />
     </aside>
   );
 }
@@ -307,12 +412,55 @@ function BrowseStalls({ zoneId, onAnnouncement, onSelectListing }: {
   );
 }
 
-export default function App() {
+type DemoController = {
+  expireTrade(tradeId: bigint): void;
+  getDemoAccount(): Address | undefined;
+  releaseDelayedAction(): void;
+  resetDemo(): void;
+  setNextAction(mode: 'fail' | 'delay'): void;
+};
+
+export function MarketplaceApp({ demo, service }: { demo?: DemoController; service: EscrowService }) {
+  const [account, setAccount] = useState<Address | null>(() => demo?.getDemoAccount() ?? null);
+  const [balance, setBalance] = useState(0n);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [unlockedListings, setUnlockedListings] = useState<Set<bigint>>(() => new Set());
   const [zoneId, setZoneId] = useState<number>(ZONES[0].id);
   const [selectedListing, setSelectedListing] = useState<CanonicalListing | null>(null);
   const [announcement, setAnnouncement] = useState('Marketplace ready.');
   const listingTriggerRef = useRef<HTMLButtonElement | null>(null);
   const announce = useCallback((message: string) => setAnnouncement(message), []);
+
+  const refresh = useCallback(async () => {
+    if (!account) return;
+    const [nextTrades, nextBalance] = await Promise.all([service.getMyTrades(), service.getUsdcBalance(account)]);
+    setTrades(nextTrades);
+    setBalance(nextBalance);
+  }, [account, service]);
+
+  useEffect(() => { if (account) void refresh(); }, [account, refresh]);
+
+  async function connect() {
+    const nextAccount = await service.connectWallet();
+    setAccount(nextAccount);
+    setBalance(await service.getUsdcBalance(nextAccount));
+    setTrades(await service.getMyTrades());
+    setAnnouncement('Demo wallet connected.');
+  }
+
+  async function demoDeliver(trade: Trade, hash: `0x${string}`) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const tx = await service.markDelivered(trade.id, hash);
+      await tx.wait();
+      await refresh();
+      setAnnouncement(`Trade ${trade.id} delivery finalized.`);
+    } catch (error) {
+      setAnnouncement(`Delivery Failed: ${(error as Error).message}.`);
+    } finally { setBusy(false); }
+  }
 
   function enterZone(nextZoneId: number) {
     setZoneId(nextZoneId);
@@ -340,8 +488,20 @@ export default function App() {
       <div className="desktop-experience">
         <header className="app-header">
           <div><span className="demo-badge">Demo Mode</span><h1>MonFish-Market</h1></div>
-          <p className="token-note">MockUSDC is the product token. MON pays gas only.</p>
+          <div className="wallet-summary"><p className="token-note">MockUSDC is the product token. MON pays gas only.</p>{account ? <strong>{formatUsdc(balance)} MockUSDC</strong> : <button onClick={connect} type="button">Connect demo wallet</button>}</div>
         </header>
+        <section aria-label="Demo Mode controls" className="demo-controls">
+          <strong>🧪 Demo Mode controls</strong>
+          {demo ? trades.filter((trade) => trade.status === TradeStatus.Funded).map((trade) => {
+            const listing = LISTINGS.find((candidate) => candidate.id === trade.listingId)!;
+            const name = getListingMetadata(listing.id)!.name;
+            return <span key={trade.id.toString()}><button disabled={busy} onClick={() => void demoDeliver(trade, listing.productHash)} type="button">Mark Delivered — {name}</button><button disabled={busy} onClick={() => void demoDeliver(trade, `0x${'00'.repeat(32)}`)} type="button">Deliver bad hash — {name}</button><button disabled={busy} onClick={() => { demo.expireTrade(trade.id); void refresh(); }} type="button">Expire — {name}</button></span>;
+          }) : null}
+          {demo ? <><button disabled={busy} onClick={() => { demo.setNextAction('fail'); setAnnouncement('Next wallet action will fail.'); }} type="button">Fail next action</button>
+          <button disabled={busy} onClick={() => { demo.setNextAction('delay'); setAnnouncement('Next wallet action will remain pending.'); }} type="button">Delay next action</button>
+          <button onClick={() => { demo.releaseDelayedAction(); setAnnouncement('Delayed action released.'); }} type="button">Release delayed action</button>
+          <button disabled={busy} onClick={() => { demo.resetDemo(); setAccount(null); setTrades([]); setBalance(0n); setUnlockedListings(new Set()); setSelectedListing(null); setAnnouncement('Demo reset.'); }} type="button">Reset Demo</button></> : <span>Live Escrow Service</span>}
+        </section>
         <nav aria-label="Choose a Zone" className="zone-picker">
           <ShellIcon name="compass" />
           {ZONES.map((zone) => (
@@ -353,11 +513,16 @@ export default function App() {
         <div className="playfield-shell">
           <MarketScene onAnnouncement={announce} onSelectListing={openListing} zoneId={zoneId} />
           <BrowseStalls onAnnouncement={announce} onSelectListing={openListing} zoneId={zoneId} />
-          {selectedListing ? <ListingDrawer key={selectedListing.id.toString()} listing={selectedListing} onClose={closeListing} /> : null}
+          {selectedListing ? <ListingDrawer commerce={{ account, busy, service, trade: trades.find((trade) => trade.listingId === selectedListing.id) ?? null, refresh, setBusy, unlocked: unlockedListings.has(selectedListing.id), unlock: () => setUnlockedListings((current) => new Set(current).add(selectedListing.id)) }} key={selectedListing.id.toString()} listing={selectedListing} onClose={closeListing} /> : null}
         </div>
         <p className="demo-footnote">Use WASD or arrow keys to swim. Click a Seller or use Browse Stalls without moving.</p>
       </div>
       <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">{announcement}</p>
     </main>
   );
+}
+
+export default function App() {
+  const [mock] = useState(() => createMockEscrowService({ finalityDelayMs: 0 }));
+  return <MarketplaceApp demo={mock} service={mock} />;
 }

@@ -80,6 +80,44 @@ summary:focus-visible {
   text-align: right;
 }
 
+.wallet-summary {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.wallet-summary button,
+.demo-controls button,
+.check-status {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 9px;
+  color: #ffffff;
+  background: #173e55;
+  font-weight: 800;
+}
+
+.demo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  margin-bottom: 12px;
+  padding: 7px 10px;
+  overflow-x: auto;
+  border: 2px solid #c4872f;
+  border-radius: 12px;
+  color: #67420c;
+  background: #fff3ca;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.demo-controls span { display: inline-flex; gap: 5px; }
+.demo-controls button { background: #8a5a18; font-size: 0.72rem; }
+.demo-controls button:disabled { opacity: 0.55; cursor: wait; }
+
 .zone-picker {
   display: flex;
   align-items: center;
@@ -252,6 +290,43 @@ summary:focus-visible {
   border-radius: 12px;
   font-weight: 900;
 }
+
+.commerce-note,
+.action-message,
+.trade-panel p {
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.commerce-actions,
+.trade-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #d9caa9;
+}
+
+.trade-panel .primary-action,
+.trade-panel .secondary-action { min-height: 38px; }
+
+.trade-status {
+  width: fit-content;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #45616a;
+  font-weight: 900;
+}
+
+.status-delivered { background: #2d6384; }
+.status-completed { background: #267047; }
+.status-refunded { background: #81533a; }
+.delivery-hash { overflow-wrap: anywhere; font-size: 0.61rem; }
+.action-message { margin: 0; color: #5c421c; font-weight: 800; }
+.check-status { justify-self: start; color: #173e55; background: #eadcba; }
+.artifact-download { color: #0b5966; font-size: 0.78rem; font-weight: 900; }
 
 .browse-stalls {
   position: absolute;
@@ -658,10 +733,12 @@ blockquote::after { content: "”"; }
 }
 
 @media (min-width: 1024px) and (max-height: 760px) {
-  .app-shell { width: min(100% - 20px, 1180px); padding-top: 14px; }
+  .app-shell { width: min(100% - 20px, 1180px, calc((100vh - 205px) * 16 / 9)); padding-top: 8px; padding-bottom: 8px; }
   .app-header { align-items: flex-start; }
+  .app-header h1 { font-size: 1.8rem; }
   .token-note { max-width: 190px; font-size: 0.72rem; }
   .zone-picker { overflow-x: auto; padding: 3px; }
+  .demo-controls { min-height: 40px; margin-bottom: 7px; padding: 4px 7px; }
   .zone-picker button { min-width: max-content; min-height: 44px; padding: 7px 11px; font-size: 0.72rem; }
   .playfield-shell { border-radius: 12px; }
   .listing-drawer { width: 62%; padding: 14px; }

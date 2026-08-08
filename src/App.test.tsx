@@ -1,6 +1,16 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+beforeEach(() => {
+  localStorage.clear();
+  const artifact = readFileSync(resolve(process.cwd(), 'assets', 'pixel-reef-starter-pack.zip'));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(artifact)));
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('Buyer browses the canonical market', () => {
   it('inspects every stall and can discard a local checkout draft', async () => {
@@ -120,5 +130,65 @@ describe('Buyer browses the canonical market', () => {
     expect(close).toHaveFocus();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(seller).toHaveFocus());
+  });
+});
+
+describe('Buyer completes deterministic mock Trades', () => {
+  it('preserves the last valid state when a deterministic wallet action fails', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect demo wallet' }));
+    await user.click(screen.getByRole('button', { name: 'Enter Sardine Harbor' }));
+    await user.click(screen.getByRole('button', { name: /Talk to Mara the Maker/ }));
+    const details = screen.getByRole('dialog', { name: 'Pixel Reef Starter Pack details' });
+    await user.click(screen.getByRole('button', { name: 'Fail next action' }));
+    await user.click(within(details).getByRole('button', { name: 'Approve $5.00 MockUSDC' }));
+    expect(await within(details).findByText(/Approval Failed/)).toBeVisible();
+    expect(within(details).queryByText('Funded')).not.toBeInTheDocument();
+    expect(within(details).getByRole('button', { name: 'Approve $5.00 MockUSDC' })).toBeEnabled();
+  });
+
+  it('completes Pixel Reef only after finalized delivery and artifact verification', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect demo wallet' }));
+    await user.click(screen.getByRole('button', { name: 'Enter Sardine Harbor' }));
+    await user.click(screen.getByRole('button', { name: /Talk to Mara the Maker/ }));
+    const details = screen.getByRole('dialog', { name: 'Pixel Reef Starter Pack details' });
+
+    await user.click(within(details).getByRole('button', { name: 'Approve $5.00 MockUSDC' }));
+    expect(await within(details).findByText(/Approval finalized/)).toBeVisible();
+    await user.click(within(details).getByRole('button', { name: 'Fund Trade' }));
+    expect(await within(details).findByText('Funded')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: /Mark Delivered.*Pixel Reef/ }));
+    expect(await within(details).findByText('Delivered')).toBeVisible();
+    expect(within(details).getByRole('button', { name: 'Confirm Receipt' })).toBeDisabled();
+    await user.click(within(details).getByRole('button', { name: 'Verify and unlock artifact' }));
+    expect(await within(details).findByText(/Artifact verified and unlocked/)).toBeVisible();
+    expect(within(details).getByRole('link', { name: 'Download verified artifact' })).toHaveAttribute('href', '/pixel-reef-starter-pack.zip');
+    await user.click(within(details).getByRole('button', { name: 'Confirm Receipt' }));
+    expect(await within(details).findByText('Completed')).toBeVisible();
+    expect(within(details).getByText(/Seller paid/)).toBeVisible();
+  });
+
+  it('refunds Ghost Ship only after deterministic deadline expiry', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect demo wallet' }));
+    await user.click(screen.getByRole('button', { name: 'Enter Sardine Harbor' }));
+    await user.click(screen.getByRole('button', { name: /Talk to Old Finn/ }));
+    const details = screen.getByRole('dialog', { name: 'Ghost Ship Map Pack details' });
+    await user.click(within(details).getByRole('button', { name: 'Approve $3.00 MockUSDC' }));
+    await user.click(await within(details).findByRole('button', { name: 'Fund Trade' }));
+    expect(await within(details).findByRole('button', { name: 'Reclaim Funds' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /Expire.*Ghost Ship/ }));
+    expect(within(details).getByRole('button', { name: 'Reclaim Funds' })).toBeEnabled();
+    await user.click(within(details).getByRole('button', { name: 'Reclaim Funds' }));
+    expect(await within(details).findByText('Refunded')).toBeVisible();
+    expect(within(details).queryByText('Completed')).not.toBeInTheDocument();
   });
 });
