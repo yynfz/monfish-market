@@ -33,7 +33,7 @@ The seller connects a Monad wallet and creates a coral stall in one of the map z
 - Price in USDC
 - Product description
 - Product or listing hash
-- Delivery deadline
+- Delivery window (a duration; the concrete deadline is computed when the buyer funds the trade, not at listing time)
 - Seller wallet address
 - Home reef on the ocean world map
 
@@ -88,7 +88,7 @@ Prices should be denominated in stablecoins rather than MON so that a product ke
 - **Payment token:** USDC only for the MVP, because it is widely supported and has a predictable six-decimal format. Additional stablecoins can be added later through a contract allowlist.
 - **Display:** The frontend shows `$5.00 USDC` while the contract stores the token's smallest units.
 - **Gas:** Buyers and sellers still need a small amount of MON to submit transactions.
-- **Testnet fallback:** Use a clearly labeled mock USDC token if an official testnet stablecoin is unavailable.
+- **Testnet fallback (decided):** No official Monad testnet USDC is documented, so the MVP deploys its own clearly labeled `MockUSDC` (6 decimals, open `mint`) and allowlists only it.
 
 The escrow contract should not accept arbitrary ERC-20 tokens. It should whitelist the USDC contract address, use OpenZeppelin `SafeERC20`, and store the payment token for every trade.
 
@@ -100,13 +100,13 @@ The contract should use one deployment with trade IDs rather than deploying a ne
 
 Core functions:
 
-- `createListing(uint8 zoneId, address paymentToken, bytes32 productHash, uint256 price, uint64 deadline)`
-- `fundTrade(uint256 listingId)` after ERC-20 approval
+- `createListing(uint8 zoneId, bytes32 productHash, uint256 price, uint64 deliveryWindow)` — the payment token is fixed to allowlisted USDC in the constructor, so listings do not carry a token parameter
+- `fundTrade(uint256 listingId)` after ERC-20 approval; sets the trade deadline to `now + deliveryWindow`. Listings are reusable — each funding mints a new trade ID
 - `markDelivered(uint256 tradeId, bytes32 deliveryHash)`
 - `confirmReceipt(uint256 tradeId)`
 - `refundExpired(uint256 tradeId)`
-- `raiseDispute(uint256 tradeId)` as an optional feature
-- `resolveDispute(uint256 tradeId, address winner)` as a centralized MVP fallback
+
+Dispute functions (`raiseDispute`/`resolveDispute`) are cut from the MVP entirely — arbitration is roadmap, not contract surface (see `docs/adr/0001-escrow-state-machine.md`).
 
 Each trade stores:
 
@@ -201,7 +201,7 @@ Use one pre-funded seller wallet and one pre-funded buyer wallet. The buyer and 
 7. Buyer receives the download and clicks `Confirm Receipt`.
 8. Show the escrow status changing to `Completed`.
 9. Show the seller's USDC balance increasing and the transaction confirming on Monad.
-10. If time allows, travel to Shipwreck Cove and repeat with a seller who does not deliver to demonstrate the expiry refund.
+10. If time allows, buy the short-window `Ghost Ship Map Pack` listing in Sardine Harbor from a seller who never delivers, narrate the trust model while its 60-second delivery window expires, and call `refundExpired` live. (Shipwreck Cove as a third zone is cut from the MVP; the refund feature stays.)
 
 The key visual moment is:
 
@@ -225,7 +225,7 @@ The strongest Monad argument is not that the game needs a blockchain for every m
 - Creator fees for premium digital product categories
 - Optional subscription for seller analytics and storefront customization
 
-For the hackathon, the fee can be disabled or set to a very small testnet amount.
+For the hackathon, the contract contains no fee logic at all — the fee is pitched as the revenue model, not implemented. Every line of money-moving code not written is a test and an audit worry avoided.
 
 ## Future Versions
 
