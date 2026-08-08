@@ -62,3 +62,22 @@ Exactly three files, hand-delivered on every change (no repo-watching):
 3. `deployments.json` — contract + MockUSDC addresses on Monad testnet (~hour 2)
 
 Demo product: the Starter Pack download is a zip of the game's own fish sprites — when you have sprite assets, send the zip so its hash can go on-chain.
+
+## How to swap mock → real (the #6 one-liner)
+
+When you're ready to connect to the live contract, replace wherever you construct your mock service with:
+
+```ts
+// Before (mock):
+import { createMockEscrowService } from './escrow.mock';
+const escrow = createMockEscrowService();
+
+// After (real — this is the entire swap):
+import { createChainEscrowService } from '../../shared/escrow.real';
+import deployments from '../../shared/deployments.json';
+const escrow = createChainEscrowService(deployments);
+```
+
+`deployments.json` has the live contract addresses, chain ID (10143), and RPC URL already baked in. No other UI changes needed — both implementations satisfy the same `EscrowService` interface.
+
+One heads-up: your `listings.json` should handle unknown listing IDs gracefully (e.g. `listing ?? null`). The `create-listing.sh` script may add a live listing during the demo, so the on-chain count could exceed your static file.
