@@ -16,22 +16,15 @@ remain off-chain.
 
 ## Repository status
 
-This checkout contains several parts at different levels of completeness:
+The repository includes the complete MVP source: a React/Vite marketplace,
+mock and real escrow services, Solidity contracts and Foundry tests, deployment
+and seller scripts, demo artifacts, and product documentation. A Monad testnet
+deployment manifest is tracked in `shared/deployments.json`; treat those
+addresses as demo infrastructure and verify them before sending transactions.
 
-| Part | Status in this checkout |
-| --- | --- |
-| Escrow domain API | Tracked and type-checkable in `shared/escrow.ts` |
-| Real Monad/viem integration | Tracked and type-checkable in `shared/escrow.real.ts` |
-| Product and architecture documents | Tracked under `docs/` |
-| Browser demo | A prebuilt, untracked static bundle is present in `dist/`; its React source and build scripts are not present |
-| Solidity contracts | Untracked Foundry artifacts are present in `contracts/out/`, but Solidity source, tests, configuration, and scripts are not present in this checkout |
-| Testnet deployment | No tracked deployment-address file is present |
-
-As a result, the TypeScript boundary can be installed and checked from source,
-and the current static demo can be previewed. The Solidity contracts and browser
-application cannot currently be rebuilt from this checkout alone. Generated
-folders such as `dist/`, `contracts/out/`, `.tools/`, and `node_modules/` should
-not be treated as substitutes for their missing source or configuration.
+The app starts in **Demo Mode** with an in-memory escrow implementation, making
+the complete lifecycle reproducible without a wallet or testnet funds. The same
+UI can use the viem-backed service for live Monad transactions.
 
 ## What the product does
 
@@ -178,61 +171,66 @@ browser wallet represents the buyer.
 
 ### Smart contracts
 
-The generated ABI shows two contracts:
+The contract layer contains two contracts:
 
 - **`DigitalEscrow`** — creates listings, pulls approved MockUSDC into escrow,
   records delivery, pays sellers after confirmation, and refunds expired trades.
 - **`MockUSDC`** — a six-decimal test ERC-20 used because the design does not
   assume an official testnet USDC. MON is used only for network gas.
 
-The intended Solidity implementation uses OpenZeppelin `SafeERC20` and
+The Solidity implementation uses OpenZeppelin `SafeERC20` and
 `ReentrancyGuard`. IDs start at `1`; listings are reusable; self-purchases are
-rejected; and completed/refunded trades are terminal. The generated test ABI
-lists coverage for authorization, approval, reusable listings, deadline
+rejected; and completed/refunded trades are terminal. Foundry tests cover
+authorization, approval, reusable listings, deadline
 calculation and overflow, happy-path settlement, refunds, terminal states, and
-event emission. The corresponding `.sol` files are not available in this
-checkout, so these tests cannot currently be rerun.
+event emission.
 
 ## Tech stack
 
 | Layer | Technology | Purpose |
 | --- | --- | --- |
 | Network | Monad, EVM | Fast, low-cost escrow settlement |
-| Contracts | Solidity + Foundry | Escrow/token implementation, tests, deployment scripts (artifacts only in this checkout) |
+| Contracts | Solidity + Foundry | Escrow/token implementation, tests, and deployment scripts |
 | Contract safety | OpenZeppelin Contracts | Safe ERC-20 transfers and reentrancy protection |
-| Chain client | viem `2.55.10` | Wallet connection, reads, simulations, writes, receipts, events, and finality |
-| Shared domain layer | TypeScript `5.9.2`, strict mode, ES2022 | Stable frontend/blockchain service boundary |
-| Browser demo | React + Vite | Ocean marketplace experience (visible only as a prebuilt bundle here) |
+| Chain client | viem `2.55.11` | Wallet connection, reads, simulations, writes, receipts, events, and finality |
+| Shared domain layer | TypeScript `7.0.2`, strict mode | Stable frontend/blockchain service boundary |
+| Browser app | React `19.2.8` + Vite `8.2.1` | Ocean marketplace experience and production build |
+| Tests | Vitest + Testing Library | Component, listing, and interaction coverage |
 | Payment asset | MockUSDC, 6 decimals | Predictable dollar-style demo pricing |
 | Wallet transport | EIP-1193 | Browser-wallet interaction |
 | Documentation | Markdown + Mermaid | Product, domain, architecture, and integration decisions |
 
-The tracked root package intentionally has only `viem` as a runtime dependency
-and TypeScript as a development dependency. React/Vite packages visible in a
-local `node_modules/` directory are not declared by the tracked `package.json`
-and cannot be relied upon for a clean installation.
+The root package contains the canonical Vite application. A separate `frontend/`
+Next.js implementation is retained as an integration/demo variant.
 
 ## Project structure
 
 ```text
 monfish-market/
+├── src/                       # React/Vite marketplace UI and tests
 ├── shared/
 │   ├── escrow.ts              # Canonical domain types and EscrowService API
-│   └── escrow.real.ts         # Real viem + injected-wallet implementation
+│   ├── escrow.mock.ts         # In-memory demo implementation
+│   ├── escrow.real.ts         # Real viem + injected-wallet implementation
+│   ├── catalog.ts             # Canonical listing metadata
+│   └── deployments.json       # Monad testnet deployment manifest
+├── contracts/
+│   ├── src/                   # DigitalEscrow and MockUSDC Solidity source
+│   ├── test/                  # Foundry contract tests
+│   └── script/                # Deploy-and-seed script
+├── scripts/                   # Deployment, delivery, listing, and harness tools
+├── assets/                    # Demo downloadable artifacts
+├── frontend/                  # Next.js integration/demo variant
 ├── docs/
 │   ├── monfish-prd.md         # Product vision, MVP, demo, risks, roadmap
 │   ├── integration-memo.md    # Frontend/backend integration contract
 │   ├── backend-plan.md        # Planned contract/deployment work
 │   └── adr/
 │       └── 0001-escrow-state-machine.md
-├── contracts/
-│   ├── out/                   # Untracked generated Foundry artifacts
-│   └── cache/                 # Untracked generated Foundry cache
-├── dist/                      # Untracked prebuilt browser demo and demo files
 ├── CONTEXT.md                 # Canonical project vocabulary
 ├── skills-lock.json           # Pinned agent-skill sources and hashes
-├── package.json               # Type-check script and tracked dependencies
-└── tsconfig.json              # Strict NodeNext TypeScript configuration
+├── package.json               # App scripts and dependencies
+└── vite.config.ts             # Vite and Vitest configuration
 ```
 
 ## Getting started
@@ -241,7 +239,7 @@ monfish-market/
 
 - Node.js 20 or newer (Node.js 22 is known to work in the current environment)
 - npm
-- Python 3 only if you want to serve the existing static demo
+- Foundry for compiling, testing, or deploying the contracts
 - A desktop viewport at least 1024 px wide for the current demo layout
 
 ### Install and validate the tracked source
@@ -249,23 +247,24 @@ monfish-market/
 ```bash
 npm ci
 npm run typecheck
+npx vitest run src
+npm run build
 ```
 
-`npm run typecheck` executes `tsc --noEmit` over `shared/**/*.ts`. There is no
-tracked frontend build, test, lint, or development-server script at present.
+The scoped Vitest command avoids collecting the separate Playwright suite under
+`frontend/tests/`; run that suite from `frontend/` with its own dependencies.
 
-### Preview the existing static demo
-
-If `dist/` exists in your checkout:
+### Run the marketplace
 
 ```bash
-python -m http.server 4173 --directory dist
+npm run dev
 ```
 
-Then open <http://localhost:4173>. Use a web server rather than opening
-`dist/index.html` directly because the demo fetches artifact ZIP files by URL.
+Open the local URL printed by Vite (normally <http://localhost:5173>). A
+production bundle is emitted to `dist/` by `npm run build` and can be previewed
+with `npx vite preview`.
 
-The bundle runs in **Demo Mode** with an in-memory escrow service. It supports:
+The app runs in **Demo Mode** with an in-memory escrow service. It supports:
 
 1. Connecting a fake demo wallet.
 2. Moving with WASD/arrow keys or browsing stalls directly.
@@ -304,25 +303,28 @@ const { tradeId, tx } = await service.fundTrade(listings[0].id);
 if ((await tx.wait()) !== 'success') throw new Error('Funding reverted');
 ```
 
-The chain ID above appears in the project plan, but this repository has no
-tracked deployment file. Replace both addresses with values from a deployment
-you control and verify the network configuration before submitting a wallet
-transaction. Never commit private keys or seed phrases.
+The tracked Monad testnet values are in `shared/deployments.json` (chain ID
+`10143`). Verify the addresses and network before submitting a wallet
+transaction, and replace them when using a deployment you control. Never commit
+private keys or seed phrases.
 
-## Intended contract development workflow
+## Contract development workflow
 
-Once the missing Foundry source tree is restored, the expected workflow is:
+Install the non-vendored Foundry dependencies, then build and test:
 
 ```bash
 cd contracts
+forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts
 forge build
 forge test -vvv
 ```
 
-Deployment was designed around a `DeployAndSeed.s.sol` script that deploys
+`DeployAndSeed.s.sol` deploys
 MockUSDC and `DigitalEscrow`, mints demo balances, and creates the seed listings.
-Do not run a broadcast command until the script, `foundry.toml`, environment
-variables, RPC URL, and target chain have all been restored and reviewed.
+For testnet deployment, create `contracts/.env` with `SELLER_PRIVATE_KEY`,
+`BUYER_ADDRESS`, and `RPC_URL`, fund the seller/deployer with testnet MON, and
+run `scripts/deploy.sh`. Review the script, target chain, and addresses before
+broadcasting.
 
 ## Seed marketplace
 
@@ -380,25 +382,21 @@ skills' project roles rather than claiming an auditable invocation history.
 
 ## Known limitations
 
-- This checkout is missing contract and browser-app source files needed for
-  clean rebuilds.
-- There is no tracked deployment manifest or currently verifiable live address.
-- The checked-in package exposes type checking only; it has no automated tests.
 - `getListings()` and `getMyTrades()` perform linear scans of contract IDs.
 - The demo uses an in-memory buyer flow and placeholder artifacts.
 - Delivery is not encrypted or decentralized.
 - There is no reputation, arbitration, dispute, fee, multi-token, or cancellation
   system.
 - The current experience is desktop-only and not multiplayer.
-- The contracts represented by local generated artifacts have not been audited.
+- The contracts have not been audited.
 
 ## Roadmap
 
-The planned next steps are to restore and track all source/build configuration,
-publish verified deployment addresses, wire the UI to the real service, and add
-CI for TypeScript and Foundry tests. Product-level follow-ups include encrypted
-delivery, event indexing, seller/buyer reputation, dispute resolution,
-additional reef zones, mobile support, and real-time social presence.
+The planned next steps are to harden the live testnet integration, publish
+verified contract links, and add CI for TypeScript and Foundry tests.
+Product-level follow-ups include encrypted delivery, event indexing,
+seller/buyer reputation, dispute resolution, additional reef zones, mobile
+support, and real-time social presence.
 
 ## Further reading
 
