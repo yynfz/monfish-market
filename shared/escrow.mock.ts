@@ -82,7 +82,28 @@ export interface MockEscrowOptions {
   finalityDelayMs?: number;
 }
 
-export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowService {
+export interface DemoEscrowService extends EscrowService {
+  expireTrade(tradeId: bigint): void;
+  getDemoAccount(): Address | undefined;
+  resetDemo(): void;
+  setNextAction(mode: 'fail' | 'delay'): void;
+  releaseDelayedAction(): void;
+}
+
+function finalizingTx(delay: number, commit: () => void): TxRef {
+  const txHash = nextTxHash();
+  let finalized = false;
+  return {
+    txHash,
+    wait: async () => {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (!finalized) { commit(); finalized = true; }
+      return 'success';
+    },
+  };
+}
+
+export function createMockEscrowService(opts: MockEscrowOptions = {}): DemoEscrowService {
   const delay = opts.finalityDelayMs ?? 800;
 
   // Mutable in-memory state — fresh per factory call.
@@ -94,6 +115,41 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
   const trades = new Map<bigint, Trade>();
   let tradeCounter = 0n;
   const eventListeners = new Set<(e: TradeEvent) => void>();
+  let nextAction: 'normal' | 'fail' | 'delay' = 'normal';
+  let releaseDelay: (() => void) | null = null;
+
+  const storage = typeof localStorage === 'undefined' ? null : localStorage;
+  const stored = storage?.getItem('monfish-demo-session');
+  if (stored) {
+    try {
+      const snapshot = JSON.parse(stored) as {
+        account?: Address;
+        balances: [Address, string][];
+        trades: Array<Omit<Trade, 'id' | 'listingId' | 'amountUsdc'> & { id: string; listingId: string; amountUsdc: string }>;
+      };
+      connectedAccount = snapshot.account;
+      usdcBalances.clear();
+      snapshot.balances.forEach(([address, amount]) => usdcBalances.set(address, BigInt(amount)));
+      snapshot.trades.forEach((trade) => trades.set(BigInt(trade.id), { ...trade, id: BigInt(trade.id), listingId: BigInt(trade.listingId), amountUsdc: BigInt(trade.amountUsdc) }));
+      tradeCounter = [...trades.keys()].reduce((highest, id) => id > highest ? id : highest, 0n);
+    } catch { storage?.removeItem('monfish-demo-session'); }
+  }
+
+  function persist() {
+    storage?.setItem('monfish-demo-session', JSON.stringify({
+      account: connectedAccount,
+      balances: [...usdcBalances].map(([address, amount]) => [address, amount.toString()]),
+      trades: [...trades.values()].map((trade) => ({ ...trade, id: trade.id.toString(), listingId: trade.listingId.toString(), amountUsdc: trade.amountUsdc.toString() })),
+    }));
+  }
+
+  function beforeAction() {
+    const mode = nextAction;
+    nextAction = 'normal';
+    if (mode === 'fail') throw new Error('Demo wallet rejected the action');
+    if (mode === 'delay') return new Promise<void>((resolve) => { releaseDelay = resolve; });
+    return Promise.resolve();
+  }
 
   function emit(type: TradeEvent['type'], tradeId: bigint, txHash: Hex) {
     const event: TradeEvent = { type, tradeId, txHash };
@@ -118,8 +174,29 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
   }
 
   return {
+    expireTrade(tradeId: bigint) {
+      const trade = requireTrade(tradeId);
+      trades.set(tradeId, { ...trade, deadline: Math.floor(Date.now() / 1000) - 1 });
+      persist();
+    },
+
+    getDemoAccount() { return connectedAccount; },
+
+    setNextAction(mode: 'fail' | 'delay') { nextAction = mode; },
+    releaseDelayedAction() { releaseDelay?.(); releaseDelay = null; },
+
+    resetDemo() {
+      connectedAccount = undefined;
+      trades.clear();
+      tradeCounter = 0n;
+      usdcBalances.clear();
+      usdcBalances.set(DEMO_BUYER, INITIAL_BUYER_USDC);
+      usdcBalances.set(DEMO_SELLER, INITIAL_SELLER_USDC);
+      storage?.removeItem('monfish-demo-session');
+    },
     async connectWallet() {
       connectedAccount = DEMO_BUYER;
+      persist();
       return DEMO_BUYER;
     },
 
@@ -143,12 +220,14 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
     },
 
     async approveUsdc(_amount: bigint) {
+      await beforeAction();
       // Approval is a no-op in the mock — fundTrade doesn't check allowance.
       // Still returns a TxRef so the UI can show the Awaiting Wallet → Pending → Approved flow.
       return makeMockTxRef(delay);
     },
 
     async fundTrade(listingId: bigint) {
+      await beforeAction();
       const me = requireAccount();
       const listing = getListing(listingId);
 
@@ -173,43 +252,47 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
         deadline,
         status: TradeStatus.Funded,
       };
-      trades.set(tradeId, trade);
-      usdcBalances.set(me, balance - listing.priceUsdc);
-
-      const tx = makeMockTxRef(delay);
-      // Fire event after wait resolves (mirrors real: event is mined, then finalized).
-      void tx.wait().then(() => emit('Funded', tradeId, tx.txHash));
+      const tx = finalizingTx(delay, () => {
+        trades.set(tradeId, trade);
+        usdcBalances.set(me, balance - listing.priceUsdc);
+        persist();
+        emit('Funded', tradeId, tx.txHash);
+      });
 
       return { tradeId, tx };
     },
 
     async markDelivered(tradeId: bigint, deliveryHash: Hex) {
+      await beforeAction();
       const trade = requireTrade(tradeId);
       if (trade.status !== TradeStatus.Funded) {
         throw new Error(`markDelivered requires Funded status, got ${TradeStatus[trade.status]}`);
       }
-      trades.set(tradeId, { ...trade, status: TradeStatus.Delivered, deliveryHash });
-
-      const tx = makeMockTxRef(delay);
-      void tx.wait().then(() => emit('Delivered', tradeId, tx.txHash));
+      const tx = finalizingTx(delay, () => {
+        trades.set(tradeId, { ...trade, status: TradeStatus.Delivered, deliveryHash });
+        persist();
+        emit('Delivered', tradeId, tx.txHash);
+      });
       return tx;
     },
 
     async confirmReceipt(tradeId: bigint) {
+      await beforeAction();
       const trade = requireTrade(tradeId);
       if (trade.status !== TradeStatus.Delivered) {
         throw new Error(`confirmReceipt requires Delivered status, got ${TradeStatus[trade.status]}`);
       }
-      trades.set(tradeId, { ...trade, status: TradeStatus.Completed });
-      // Credit seller.
-      usdcBalances.set(trade.seller, (usdcBalances.get(trade.seller) ?? 0n) + trade.amountUsdc);
-
-      const tx = makeMockTxRef(delay);
-      void tx.wait().then(() => emit('Completed', tradeId, tx.txHash));
+      const tx = finalizingTx(delay, () => {
+        trades.set(tradeId, { ...trade, status: TradeStatus.Completed });
+        usdcBalances.set(trade.seller, (usdcBalances.get(trade.seller) ?? 0n) + trade.amountUsdc);
+        persist();
+        emit('Completed', tradeId, tx.txHash);
+      });
       return tx;
     },
 
     async refundExpired(tradeId: bigint) {
+      await beforeAction();
       const trade = requireTrade(tradeId);
       if (trade.status === TradeStatus.Completed) {
         throw new Error('Cannot refund a completed trade');
@@ -221,12 +304,12 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
       if (now <= trade.deadline) {
         throw new Error('Delivery window has not expired yet');
       }
-      trades.set(tradeId, { ...trade, status: TradeStatus.Refunded });
-      // Return funds to buyer.
-      usdcBalances.set(trade.buyer, (usdcBalances.get(trade.buyer) ?? 0n) + trade.amountUsdc);
-
-      const tx = makeMockTxRef(delay);
-      void tx.wait().then(() => emit('Refunded', tradeId, tx.txHash));
+      const tx = finalizingTx(delay, () => {
+        trades.set(tradeId, { ...trade, status: TradeStatus.Refunded });
+        usdcBalances.set(trade.buyer, (usdcBalances.get(trade.buyer) ?? 0n) + trade.amountUsdc);
+        persist();
+        emit('Refunded', tradeId, tx.txHash);
+      });
       return tx;
     },
 
@@ -241,5 +324,5 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
       // Expire it 1 second ago.
       trades.set(tradeId, { ...trade, deadline: Math.floor(Date.now() / 1000) - 1 });
     },
-  } as EscrowService;
+  };
 }
