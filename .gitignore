@@ -1,2 +1,8 @@
 .agents/skills/
 .claude/skills/
+node_modules/
+contracts/.env
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/

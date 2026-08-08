@@ -66,7 +66,7 @@ export interface EscrowService {
   fundTrade(listingId: bigint): Promise<{ tradeId: bigint; tx: TxRef }>;
   /** Buyer-only. Releases escrow to the seller. Terminal. */
   confirmReceipt(tradeId: bigint): Promise<TxRef>;
-  /** Buyer-only. Allowed only after `deadline`, while not Completed. Terminal. */
+  /** Buyer-only. Allowed only after `deadline`, while neither Completed nor Refunded. Terminal. */
   refundExpired(tradeId: bigint): Promise<TxRef>;
   /** Seller action. Mock: wire to a hidden dev-panel button to advance the lifecycle.
    *  Real impl may throw — the seller acts via Foundry script in the demo. */

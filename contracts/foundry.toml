@@ -1,0 +1,11 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+fs_permissions = [
+    { access = "read", path = "../assets" },
+    { access = "write", path = "../shared" },
+]
+
+[rpc_endpoints]
+monad_testnet = "${RPC_URL}"
