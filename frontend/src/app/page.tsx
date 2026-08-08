@@ -33,7 +33,7 @@ function MarketplaceApp() {
   }
 
   return (
-    <div className="page-shell">
+    <div className={`page-shell ${activeZone === 0 ? "theme-coral" : "theme-sardine"}`}>
       {/* ── Navbar ── */}
       <nav className="navbar">
         <div className="container">
@@ -179,7 +179,7 @@ function MarketplaceApp() {
 
         {/* ── Event Feed (messages in bottles) ── */}
         {events.length > 0 && (
-          <section className="feed-section">
+          <section className="feed-section" aria-live="polite">
             <div className="feed-title">🍾 Messages in Bottles — on-chain events</div>
             <div className="feed-list">
               {events.map((ev, i) => (

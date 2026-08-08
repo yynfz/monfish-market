@@ -67,6 +67,17 @@ export function EscrowProvider({ children }: { children: React.ReactNode }) {
   // Lazy-init service (only in browser; avoids SSR issues with window.ethereum).
   const getOrCreateService = useCallback(async (): Promise<EscrowService> => {
     if (service) return service;
+    
+    // Check if we are in demo mode
+    const useMock = typeof window !== 'undefined' && window.localStorage.getItem('monfish_use_mock') === '1';
+    
+    if (useMock) {
+      const { getMockService } = await import("@shared/escrow.mock");
+      const svc = getMockService();
+      setService(svc);
+      return svc;
+    }
+
     const { createChainEscrowService } = await import("@shared/escrow.real");
     const deployments = (await import("@shared/deployments.json")).default as {
       chainId: number;

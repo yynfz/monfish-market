@@ -22,7 +22,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.variable}>{children}</body>
+      <body className={inter.variable}>
+        <div id="desktop-notice" role="alert">
+          <h1>Desktop View Required</h1>
+          <p>The Monfish Market demo requires a viewport width of at least 1024px. Please resize your window or switch to a desktop device.</p>
+        </div>
+        {children}
+      </body>
     </html>
   );
 }

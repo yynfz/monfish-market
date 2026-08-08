@@ -89,7 +89,11 @@ a { color: var(--color-ocean); text-decoration: none; }
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  transition: background var(--dur) var(--ease-out);
 }
+
+.page-shell.theme-sardine { background: var(--color-sand); }
+.page-shell.theme-coral { background: var(--color-coral-lt); }
 
 .container {
   width: 100%;
@@ -797,4 +801,43 @@ a { color: var(--color-ocean); text-decoration: none; }
   .hero-stats { gap: var(--space-3); }
   .navbar-right { gap: var(--space-2); }
   .modal { max-width: 100%; }
+}
+
+/* ---------- Accessibility & Desktop Notice ------------------------- */
+*:focus-visible {
+  outline: 3px solid var(--color-teal);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+#desktop-notice {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--color-ocean);
+  color: var(--color-white);
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+#desktop-notice h1 {
+  color: var(--color-white);
+  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 1023px) {
+  #desktop-notice { display: flex; }
+  .page-shell { display: none !important; }
 }

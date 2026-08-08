@@ -158,32 +158,32 @@ export function BuyModal({ listing, onClose, onPurchased }: Props) {
 
           {/* Info alert */}
           {stage === "idle" && (
-            <div className="alert alert-info">
+            <div className="alert alert-info" role="status">
               💡 Two MetaMask popups: first to approve the exact USDC amount, then to lock it in escrow. Download unlocks when the seller marks delivery.
             </div>
           )}
 
           {stage === "approved" && (
-            <div className="alert alert-success">
+            <div className="alert alert-success" role="status">
               ✅ USDC approved! Now deposit {formatUsdc(listing.priceUsdc)} into escrow.
             </div>
           )}
 
           {stage === "done" && tradeId !== null && (
-            <div className="alert alert-success">
+            <div className="alert alert-success" role="status">
               🎉 Trade #{tradeId.toString()} funded and live on Monad!
             </div>
           )}
 
           {stage === "error" && err && (
-            <div className="alert alert-error">
+            <div className="alert alert-error" role="alert">
               ⚠️ {err}
               {!isRetryable && <div style={{ marginTop: "8px", fontSize: "0.85em" }}>Please refresh or contact support. Blind resubmission is disabled for this error.</div>}
             </div>
           )}
 
           {prolonged && stage === "waiting" && (
-            <div className="alert alert-info" style={{ marginTop: "1rem" }}>
+            <div className="alert alert-info" role="status" style={{ marginTop: "1rem" }}>
               ⏳ Taking longer than expected...
               <button
                 className="btn btn-outline btn-sm"

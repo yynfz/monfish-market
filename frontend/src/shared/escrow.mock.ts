@@ -82,10 +82,14 @@ export interface MockEscrowOptions {
   finalityDelayMs?: number;
 }
 
-export function createMockEscrowService(opts: MockEscrowOptions = {}) {
+let mockInstance: EscrowService | null = null;
+
+export function getMockService(opts: MockEscrowOptions = {}): EscrowService {
+  if (mockInstance) return mockInstance;
+
   const delay = opts.finalityDelayMs ?? 800;
 
-  // Mutable in-memory state — fresh per factory call.
+  // Mutable in-memory state.
   let connectedAccount: Address | undefined;
   const usdcBalances = new Map<Address, bigint>([
     [DEMO_BUYER, INITIAL_BUYER_USDC],
@@ -241,14 +245,5 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}) {
       // Expire it 1 second ago.
       trades.set(tradeId, { ...trade, deadline: Math.floor(Date.now() / 1000) - 1 });
     },
-
-    // Demo Mode helper to reset to initial state.
-    __demoReset() {
-      trades.clear();
-      usdcBalances.set(DEMO_BUYER, INITIAL_BUYER_USDC);
-      usdcBalances.set(DEMO_SELLER, INITIAL_SELLER_USDC);
-      tradeCounter = 0n;
-      eventListeners.clear();
-    },
-  };
+  } as EscrowService;
 }

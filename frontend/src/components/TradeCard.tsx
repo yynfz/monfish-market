@@ -92,19 +92,19 @@ function ArtifactSection({ trade, onVerified }: ArtifactSectionProps) {
       )}
 
       {verifyState === "verifying" && (
-        <div className="alert alert-info" style={{ marginTop: "0.75rem" }}>
+        <div className="alert alert-info" role="status" style={{ marginTop: "0.75rem" }}>
           <span className="spinner" /> Downloading and verifying keccak256…
         </div>
       )}
 
       {verifyState === "ok" && (
-        <div className="alert alert-success" style={{ marginTop: "0.75rem" }}>
+        <div className="alert alert-success" role="status" style={{ marginTop: "0.75rem" }}>
           ✅ Hash verified — artifact downloaded. You can now confirm receipt.
         </div>
       )}
 
       {verifyState === "mismatch" && (
-        <div className="alert alert-error" style={{ marginTop: "0.75rem" }}>
+        <div className="alert alert-error" role="alert" style={{ marginTop: "0.75rem" }}>
           ⚠️ Integrity check failed — hash mismatch. Do not confirm receipt.
         </div>
       )}
@@ -201,14 +201,14 @@ function ConfirmReceiptButton({
       )}
 
       {step === "done" && (
-        <div className="alert alert-success" style={{ marginTop: "0.75rem" }}>
+        <div className="alert alert-success" role="status" style={{ marginTop: "0.75rem" }}>
           🎉 Trade #{trade.id.toString()} completed! Seller received{" "}
           {formatUsdc(trade.amountUsdc)} MockUSDC.
         </div>
       )}
 
       {step === "error" && err && (
-        <div className="alert alert-error" style={{ marginTop: "0.5rem" }}>
+        <div className="alert alert-error" role="alert" style={{ marginTop: "0.5rem" }}>
           ⚠️ {err}
           {!isRetryable && <div style={{ fontSize: "0.85em", marginTop: "4px" }}>Blind resubmission disabled.</div>}
         </div>
@@ -288,7 +288,7 @@ function RefundButton({ trade, onUpdated }: { trade: Trade; onUpdated: () => voi
       )}
 
       {refundStep === "error" && refundErr && (
-        <div className="alert alert-error" style={{ width: "100%", marginTop: "8px" }}>
+        <div className="alert alert-error" role="alert" style={{ width: "100%", marginTop: "8px" }}>
           ⚠️ {refundErr}
           {!isRetryable && <div style={{ fontSize: "0.85em", marginTop: "4px" }}>Blind resubmission disabled.</div>}
         </div>
