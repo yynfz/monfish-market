@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { formatUsdc, ZONES } from '../shared/escrow';
 import { getListingMetadata, LISTINGS, type CanonicalListing } from './listings';
 
@@ -34,6 +34,7 @@ function ListingDrawer({ listing, onClose }: { listing: CanonicalListing; onClos
   const [draftOpen, setDraftOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const draftActionRef = useRef<HTMLButtonElement>(null);
   const metadata = getListingMetadata(listing.id);
 
   useEffect(() => {
@@ -43,9 +44,21 @@ function ListingDrawer({ listing, onClose }: { listing: CanonicalListing; onClos
       if (event.key === 'Escape') onClose();
     }
 
+    function containFocus(event: FocusEvent) {
+      if (!drawerRef.current?.contains(event.target as Node)) closeButtonRef.current?.focus();
+    }
+
     document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
+    document.addEventListener('focusin', containFocus);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.removeEventListener('focusin', containFocus);
+    };
   }, [onClose]);
+
+  useEffect(() => {
+    if (document.activeElement === document.body) draftActionRef.current?.focus();
+  }, [draftOpen]);
 
   if (!metadata) return null;
 
@@ -95,10 +108,10 @@ function ListingDrawer({ listing, onClose }: { listing: CanonicalListing; onClos
           <h4 id="checkout-title">Checkout draft</h4>
           <p><strong>{formatUsdc(listing.priceUsdc)} MockUSDC</strong> for {metadata.name}</p>
           <p>No Trade has been created.</p>
-          <button className="secondary-action" onClick={() => setDraftOpen(false)} type="button">Discard checkout draft</button>
+          <button className="secondary-action" onClick={() => setDraftOpen(false)} ref={draftActionRef} type="button">Discard checkout draft</button>
         </section>
       ) : (
-        <button className="primary-action" onClick={() => setDraftOpen(true)} type="button">
+        <button className="primary-action" onClick={() => setDraftOpen(true)} ref={draftActionRef} type="button">
           <ShellIcon name="bag" /> Open checkout draft
         </button>
       )}
@@ -123,8 +136,9 @@ function nearbyListing(position: Point, zoneId: number) {
   return stall ? LISTINGS.find((listing) => listing.id === stall.listingId) ?? null : null;
 }
 
-function MarketScene({ zoneId, onSelectListing }: {
+function MarketScene({ zoneId, onAnnouncement, onSelectListing }: {
   zoneId: number;
+  onAnnouncement: (message: string) => void;
   onSelectListing: (listing: CanonicalListing, trigger: HTMLButtonElement) => void;
 }) {
   const zone = ZONES.find((candidate) => candidate.id === zoneId)!;
@@ -132,12 +146,22 @@ function MarketScene({ zoneId, onSelectListing }: {
   const [position, setPosition] = useState<Point>({ x: 78, y: 76 });
   const proximityListing = nearbyListing(position, zoneId);
   const proximityRef = useRef<HTMLButtonElement>(null);
+  const previousProximityRef = useRef<CanonicalListing | null>(null);
 
   useEffect(() => setPosition({ x: 78, y: 76 }), [zoneId]);
 
   useEffect(() => {
-    if (proximityListing) proximityRef.current?.focus();
-  }, [proximityListing]);
+    const previous = previousProximityRef.current;
+    if (proximityListing) {
+      const metadata = getListingMetadata(proximityListing.id)!;
+      proximityRef.current?.focus();
+      onAnnouncement(`${metadata.sellerName} is nearby. Press Enter to talk.`);
+    } else if (previous) {
+      const metadata = getListingMetadata(previous.id)!;
+      onAnnouncement(`Moved away from ${metadata.sellerName}.`);
+    }
+    previousProximityRef.current = proximityListing;
+  }, [onAnnouncement, proximityListing]);
 
   useEffect(() => {
     function moveBuyer(event: KeyboardEvent) {
@@ -213,8 +237,9 @@ function MarketScene({ zoneId, onSelectListing }: {
   );
 }
 
-function BrowseStalls({ zoneId, onSelectListing }: {
+function BrowseStalls({ zoneId, onAnnouncement, onSelectListing }: {
   zoneId: number;
+  onAnnouncement: (message: string) => void;
   onSelectListing: (listing: CanonicalListing, trigger: HTMLButtonElement) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -222,9 +247,9 @@ function BrowseStalls({ zoneId, onSelectListing }: {
   const zone = ZONES.find((candidate) => candidate.id === zoneId)!;
   const listings = LISTINGS.filter((listing) => listing.zoneId === zoneId);
 
-  function activateFirstListing(trigger: HTMLButtonElement) {
-    const firstListing = listings[0];
-    if (firstListing) onSelectListing(firstListing, trigger);
+  function setBrowseOpen(nextOpen: boolean) {
+    setOpen(nextOpen);
+    onAnnouncement(`${nextOpen ? 'Opened' : 'Closed'} ${zone.name} Browse Stalls.`);
   }
 
   useLayoutEffect(() => {
@@ -233,18 +258,24 @@ function BrowseStalls({ zoneId, onSelectListing }: {
 
   useEffect(() => setOpen(false), [zoneId]);
 
+  useEffect(() => {
+    if (!open) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !document.querySelector('[aria-modal="true"]')) {
+        event.preventDefault();
+        setBrowseOpen(false);
+      }
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open, zone.name]);
+
   return (
     <div className="browse-stalls">
       <button
         aria-expanded={open}
         className="browse-action"
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if (open && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            activateFirstListing(event.currentTarget);
-          }
-        }}
+        onClick={() => setBrowseOpen(!open)}
         type="button"
       >
         <ShellIcon name="stall" /> Browse Stalls
@@ -281,6 +312,7 @@ export default function App() {
   const [selectedListing, setSelectedListing] = useState<CanonicalListing | null>(null);
   const [announcement, setAnnouncement] = useState('Marketplace ready.');
   const listingTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const announce = useCallback((message: string) => setAnnouncement(message), []);
 
   function enterZone(nextZoneId: number) {
     setZoneId(nextZoneId);
@@ -319,8 +351,8 @@ export default function App() {
           ))}
         </nav>
         <div className="playfield-shell">
-          <MarketScene onSelectListing={openListing} zoneId={zoneId} />
-          <BrowseStalls onSelectListing={openListing} zoneId={zoneId} />
+          <MarketScene onAnnouncement={announce} onSelectListing={openListing} zoneId={zoneId} />
+          <BrowseStalls onAnnouncement={announce} onSelectListing={openListing} zoneId={zoneId} />
           {selectedListing ? <ListingDrawer key={selectedListing.id.toString()} listing={selectedListing} onClose={closeListing} /> : null}
         </div>
         <p className="demo-footnote">Use WASD or arrow keys to swim. Click a Seller or use Browse Stalls without moving.</p>

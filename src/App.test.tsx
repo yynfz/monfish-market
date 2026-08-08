@@ -70,6 +70,24 @@ describe('Buyer browses the canonical market', () => {
     expect(screen.getByRole('dialog', { name: 'Pixel Reef Starter Pack details' })).toBeVisible();
   });
 
+  it('announces Browse and proximity changes and closes Browse with Escape', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const browse = screen.getByRole('button', { name: 'Browse Stalls' });
+    await user.click(browse);
+    expect(screen.getByRole('status')).toHaveTextContent('Opened Coral Capital Browse Stalls.');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('button', { name: /Captain's Hat Template/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Closed Coral Capital Browse Stalls.');
+
+    await user.click(screen.getByRole('button', { name: 'Enter Sardine Harbor' }));
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('status')).toHaveTextContent('Old Finn is nearby. Press Enter to talk.');
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('status')).toHaveTextContent('Moved away from Old Finn.');
+  });
+
   it('moves into Seller proximity and activates the prompt by keyboard', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -97,6 +115,8 @@ describe('Buyer browses the canonical market', () => {
     await user.keyboard('{Shift>}{Tab}{/Shift}');
     expect(within(dialog).getByRole('button', { name: 'Open checkout draft' })).toHaveFocus();
     await user.keyboard('{Tab}');
+    expect(close).toHaveFocus();
+    screen.getByRole('button', { name: 'Enter Sardine Harbor' }).focus();
     expect(close).toHaveFocus();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(seller).toHaveFocus());
