@@ -72,8 +72,8 @@ export function EscrowProvider({ children }: { children: React.ReactNode }) {
     const useMock = typeof window !== 'undefined' && window.localStorage.getItem('monfish_use_mock') === '1';
     
     if (useMock) {
-      const { getMockService } = await import("@shared/escrow.mock");
-      const svc = getMockService();
+      const { createMockEscrowService } = await import("@shared/escrow.mock");
+      const svc = createMockEscrowService();
       setService(svc);
       return svc;
     }
