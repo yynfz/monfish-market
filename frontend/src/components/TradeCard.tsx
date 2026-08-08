@@ -187,6 +187,72 @@ function ConfirmReceiptButton({
   );
 }
 
+// ─── Refund Button (Issue #10) ────────────────────────────────────────────────
+
+function RefundButton({ trade, onUpdated }: { trade: Trade; onUpdated: () => void }) {
+  const { service } = useEscrow();
+  const [refundStep, setRefundStep] = useState<"idle" | "confirming" | "waiting" | "done" | "error">("idle");
+  const [refundErr, setRefundErr] = useState<string | null>(null);
+  const [prolonged, setProlonged] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  async function handleRefund() {
+    if (!service) return;
+    setRefundStep("confirming");
+    setRefundErr(null);
+    setProlonged(false);
+    
+    try {
+      const tx = await service.refundExpired(trade.id);
+      setTxHash(tx.txHash);
+      setRefundStep("waiting");
+      
+      const timer = setTimeout(() => setProlonged(true), 4000);
+      await tx.wait();
+      clearTimeout(timer);
+      
+      setRefundStep("done");
+      setTimeout(() => { setRefundStep("idle"); onUpdated(); }, 2000);
+    } catch (e) {
+      setRefundErr((e as Error).message);
+      setRefundStep("error");
+      setTimeout(() => setRefundStep("idle"), 4000);
+    }
+  }
+
+  return (
+    <>
+      <button
+        id={`btn-refund-${trade.id}`}
+        className="btn btn-danger btn-sm"
+        disabled={refundStep !== "idle"}
+        onClick={handleRefund}
+      >
+        {refundStep === "confirming" ? <><span className="spinner" /> Awaiting wallet…</> :
+         refundStep === "waiting"    ? <><span className="spinner" /> Finalising…</> :
+         refundStep === "done"       ? "↩️ Refunded!" :
+         "↩️ Reclaim Funds"}
+      </button>
+
+      {prolonged && refundStep === "waiting" && txHash && (
+        <a
+          href={`https://testnet.monadscan.com/tx/${txHash}`}
+          target="_blank"
+          rel="noreferrer"
+          className="btn btn-outline btn-sm"
+          style={{ marginLeft: "8px" }}
+        >
+          🔍 Check Status
+        </a>
+      )}
+
+      {refundStep === "error" && refundErr && (
+        <div className="alert alert-error" style={{ width: "100%", marginTop: "8px" }}>⚠️ {refundErr}</div>
+      )}
+    </>
+  );
+}
+
 // ─── Main TradeCard ───────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<TradeStatus, string> = {
@@ -220,10 +286,6 @@ interface Props {
 export function TradeCard({ trade, onUpdated }: Props) {
   const { service } = useEscrow();
   const [artifactVerified, setArtifactVerified] = useState(false);
-  const [refundStep, setRefundStep] = useState<"idle" | "confirming" | "waiting" | "done" | "error">("idle");
-  const [refundTxHash, setRefundTxHash] = useState<string | null>(null);
-  const [refundErr, setRefundErr] = useState<string | null>(null);
-
   const meta = getListingMeta(trade.listingId);
   const statusLabel = STATUS_LABELS[trade.status] ?? "Unknown";
   const statusIcon  = STATUS_ICONS[trade.status]  ?? "❓";
@@ -232,24 +294,6 @@ export function TradeCard({ trade, onUpdated }: Props) {
   const canRefund = expired &&
     trade.status !== TradeStatus.Completed &&
     trade.status !== TradeStatus.Refunded;
-
-  async function handleRefund() {
-    if (!service) return;
-    setRefundStep("confirming");
-    setRefundErr(null);
-    try {
-      const tx = await service.refundExpired(trade.id);
-      setRefundTxHash(tx.txHash);
-      setRefundStep("waiting");
-      await tx.wait();
-      setRefundStep("done");
-      setTimeout(() => { setRefundStep("idle"); onUpdated(); }, 2000);
-    } catch (e) {
-      setRefundErr((e as Error).message);
-      setRefundStep("error");
-      setTimeout(() => setRefundStep("idle"), 4000);
-    }
-  }
 
   return (
     <div className="trade-card">
@@ -290,34 +334,8 @@ export function TradeCard({ trade, onUpdated }: Props) {
       {/* Reclaim Funds (refund path, belongs to #10 but wired here) */}
       {canRefund && (
         <div className="trade-actions">
-          <button
-            id={`btn-refund-${trade.id}`}
-            className="btn btn-danger btn-sm"
-            disabled={refundStep !== "idle"}
-            onClick={handleRefund}
-          >
-            {refundStep === "confirming" ? <><span className="spinner" /> Awaiting wallet…</> :
-             refundStep === "waiting"    ? <><span className="spinner" /> Finalising…</> :
-             refundStep === "done"       ? "↩️ Refunded!" :
-             "↩️ Reclaim Funds"}
-          </button>
+          <RefundButton trade={trade} onUpdated={onUpdated} />
         </div>
-      )}
-
-      {/* TX hash link */}
-      {refundTxHash && (
-        <a
-          className="trade-explorer-link"
-          href={`https://testnet.monadscan.com/tx/${refundTxHash}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          🔗 {shortHash(refundTxHash)} ↗
-        </a>
-      )}
-
-      {refundStep === "error" && refundErr && (
-        <div className="alert alert-error">⚠️ {refundErr}</div>
       )}
 
       {/* Suppress unused var warning */}

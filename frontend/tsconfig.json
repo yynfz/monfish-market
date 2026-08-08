@@ -21,7 +21,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@shared/*": ["../shared/*"]
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": [
@@ -30,8 +30,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts",
-    "../shared/**/*.ts"
+    "**/*.mts"
   ],
   "exclude": ["node_modules"]
 }

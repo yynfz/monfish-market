@@ -71,17 +71,34 @@ export function DemoModePanel({ trades }: { trades: Trade[] }) {
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
           {fundedTrades.map((trade) => {
             const meta = getListingMeta(trade.listingId);
+            const expired = Math.floor(Date.now() / 1000) > trade.deadline;
             return (
-              <button
-                key={trade.id.toString()}
-                id={`btn-demo-deliver-${trade.id}`}
-                className="btn btn-sm"
-                style={{ background: "var(--color-gold)", color: "white", border: "none" }}
-                disabled={busy}
-                onClick={() => markDelivered(trade)}
-              >
-                📦 Mark Delivered — {meta?.name ?? `Trade #${trade.id}`} ({formatUsdc(trade.amountUsdc)})
-              </button>
+              <div key={trade.id.toString()} style={{ display: "flex", gap: "4px" }}>
+                <button
+                  id={`btn-demo-deliver-${trade.id}`}
+                  className="btn btn-sm"
+                  style={{ background: "var(--color-gold)", color: "white", border: "none" }}
+                  disabled={busy}
+                  onClick={() => markDelivered(trade)}
+                >
+                  📦 Mark Delivered — {meta?.name ?? `Trade #${trade.id}`} ({formatUsdc(trade.amountUsdc)})
+                </button>
+                {!expired && (
+                  <button
+                    className="btn btn-sm"
+                    style={{ background: "var(--color-ink-mid)", color: "white", border: "none" }}
+                    disabled={busy}
+                    onClick={() => {
+                      if (typeof (service as any)?.__demoExpireTrade === "function") {
+                        (service as any).__demoExpireTrade(trade.id);
+                        void refreshTrades();
+                      }
+                    }}
+                  >
+                    ⏱ Expire
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
