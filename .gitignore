@@ -1,6 +1,7 @@
 .agents/skills/
 .claude/skills/
 node_modules/
+dist/
 contracts/.env
 contracts/cache/
 contracts/out/
