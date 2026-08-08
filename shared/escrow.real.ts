@@ -163,26 +163,41 @@ export function createChainEscrowService(cfg: Deployments): EscrowService {
     },
 
     onTradeEvent(cb) {
-      const names = ['TradeFunded', 'TradeDelivered', 'TradeCompleted', 'TradeRefunded'] as const;
-      const unwatchers = names.map((eventName) =>
-        publicClient.watchContractEvent({
-          address: cfg.escrow,
-          abi: escrowAbi,
-          eventName,
-          onLogs: (logs) => {
-            for (const log of logs) {
-              const args = log.args as { tradeId?: bigint };
-              if (args.tradeId === undefined) continue;
+      // One gapless poller tracking the last-seen block — viem's per-event
+      // watchers can miss logs around their initialization block.
+      const names = new Set(['TradeFunded', 'TradeDelivered', 'TradeCompleted', 'TradeRefunded']);
+      let lastBlock: bigint | undefined;
+      let polling = false;
+      const tick = async () => {
+        if (polling) return;
+        polling = true;
+        try {
+          const latest = await publicClient.getBlockNumber();
+          if (lastBlock === undefined) lastBlock = latest - 1n;
+          if (latest > lastBlock) {
+            const logs = await publicClient.getLogs({
+              address: cfg.escrow,
+              fromBlock: lastBlock + 1n,
+              toBlock: latest,
+            });
+            for (const log of parseEventLogs({ abi: escrowAbi, logs })) {
+              if (!names.has(log.eventName)) continue;
+              const { tradeId } = log.args as { tradeId: bigint };
               cb({
-                type: eventName.replace('Trade', '') as TradeEvent['type'],
-                tradeId: args.tradeId,
+                type: log.eventName.replace('Trade', '') as TradeEvent['type'],
+                tradeId,
                 txHash: log.transactionHash,
               });
             }
-          },
-        }),
-      );
-      return () => unwatchers.forEach((unwatch) => unwatch());
+            lastBlock = latest;
+          }
+        } finally {
+          polling = false;
+        }
+      };
+      void tick();
+      const interval = setInterval(() => void tick(), 2_000);
+      return () => clearInterval(interval);
     },
   };
 }
