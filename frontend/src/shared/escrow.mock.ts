@@ -82,7 +82,7 @@ export interface MockEscrowOptions {
   finalityDelayMs?: number;
 }
 
-export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowService {
+export function createMockEscrowService(opts: MockEscrowOptions = {}) {
   const delay = opts.finalityDelayMs ?? 800;
 
   // Mutable in-memory state — fresh per factory call.
@@ -241,5 +241,5 @@ export function createMockEscrowService(opts: MockEscrowOptions = {}): EscrowSer
       // Expire it 1 second ago.
       trades.set(tradeId, { ...trade, deadline: Math.floor(Date.now() / 1000) - 1 });
     },
-  } as EscrowService;
+  };
 }
