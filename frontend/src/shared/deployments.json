@@ -1,0 +1,13 @@
+{
+  "buyer": "0x1d4881AB10CF94269D27a218565fd4c363BCB39a",
+  "chainId": 10143,
+  "escrow": "0xFd2050503Aaf7d47284e12513900314034D25fF3",
+  "rpcUrl": "https://testnet-rpc.monad.xyz",
+  "seedListingIds": [
+    1,
+    2,
+    3
+  ],
+  "seller": "0x80fcb18a741771D79f063501867F721be4d11547",
+  "usdc": "0xD4E7464715Cf258a01E584356E12bE7C9F912499"
+}
