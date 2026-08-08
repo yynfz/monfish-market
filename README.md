@@ -2,17 +2,11 @@
 
 > **Swim the seven reefs. Trade through trust.**
 
-MonFish Market is an ocean-themed marketplace concept for digital goods on
-[Monad](https://www.monad.xyz/). Buyers explore reef markets as fish, discover
-seller stalls, and pay with a six-decimal test token called **MockUSDC**. The
-payment is held by a smart-contract escrow until the seller records delivery
-and the buyer confirms receipt.
+MonFish-Market is an ocean-themed digital marketplace where every character - buyer and seller alike - is a fish. Players swim across a nautical world map of reefs, ports, and shipwrecks, and sellers operate coral stalls in themed ocean zones listing digital products such as game assets, artwork, templates, software keys, or downloadable content.
 
-The project combines the familiar Indonesian **rekber** (shared-account escrow)
-model with a small game-like marketplace. Blockchain is used only where it is
-load-bearing: custody, state transitions, settlement, refunds, and an auditable
-event trail. Swimming, artwork, listing descriptions, and digital-file delivery
-remain off-chain.
+When a buyer fish approaches a seller's stall, they can initiate a trade. The buyer deposits USDC into an onchain escrow contract. The seller delivers the digital product and submits a delivery proof. After the buyer confirms receipt, the smart contract releases the escrowed stablecoins to the seller.
+
+It combines the familiar Indonesian rekber concept, or rekening bersama escrow, with a global-map ocean adventure experience and instant onchain settlement.
 
 ## Repository status
 
